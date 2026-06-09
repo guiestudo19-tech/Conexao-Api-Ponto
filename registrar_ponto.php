@@ -199,19 +199,19 @@ button {
 }
 
 button:hover {
-    background: #1d4ed8;
+    background: #2563eb;
 }
 
 button.saida {
-    background: #0f172a;
+    background: #2563eb;
 }
 
 button.almoco {
-    background: #f59e0b;
+    background: #2563eb;
 }
 
 button.retorno {
-    background: #16a34a;
+    background: #2563eb;
 }
 
 .alert-success {
