@@ -1,47 +1,111 @@
 <?php
 
-require 'config/database.php';
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
+require_once 'config/database.php';
 
 $result = mysqli_query(
-    $conn,
-    "SELECT * FROM registros_ponto ORDER BY data DESC"
+    $con,
+    "SELECT * FROM registros_ponto ORDER BY data DESC, id DESC"
 );
+
+if (!$result) {
+    die("Erro na consulta: " . mysqli_error($con));
+}
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-    <title>Registros de Ponto</title>
+<meta charset="UTF-8">
+<title>Registros de Ponto</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    padding: 30px;
+}
+
+.card {
+    background: #fff;
+    padding: 25px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.08);
+}
+
+h1 {
+    color: #1e40af;
+}
+
+a {
+    color: #2563eb;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th {
+    background: #2563eb;
+    color: white;
+    padding: 12px;
+}
+
+td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+}
+
+tr:nth-child(even) {
+    background: #f8fafc;
+}
+</style>
 </head>
+
 <body>
 
-<h2>Registros</h2>
+<div class="card">
 
-<table border="1">
+    <h1>Registros do Sistema Externo</h1>
 
-<tr>
-    <th>Email</th>
-    <th>Data</th>
-    <th>Entrada</th>
-    <th>Saída Almoço</th>
-    <th>Retorno</th>
-    <th>Saída</th>
-</tr>
+    <p>
+        <a href="registrar_ponto.php">Registrar ponto</a> |
+        <a href="api/pontos.php">Ver API JSON</a>
+    </p>
 
-<?php while($row = mysqli_fetch_assoc($result)): ?>
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Data</th>
+                <th>Entrada</th>
+                <th>Saída Almoço</th>
+                <th>Retorno Almoço</th>
+                <th>Saída</th>
+            </tr>
+        </thead>
 
-<tr>
-    <td><?= $row['email'] ?></td>
-    <td><?= $row['data'] ?></td>
-    <td><?= $row['entrada'] ?></td>
-    <td><?= $row['saida_almoco'] ?></td>
-    <td><?= $row['retorno_almoco'] ?></td>
-    <td><?= $row['saida'] ?></td>
-</tr>
+        <tbody>
+            <?php while ($row = mysqli_fetch_assoc($result)): ?>
+                <tr>
+                    <td><?= htmlspecialchars($row['email']) ?></td>
+                    <td><?= htmlspecialchars(date('d/m/Y', strtotime($row['data']))) ?></td>
+                    <td><?= htmlspecialchars($row['entrada'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($row['saida_almoco'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($row['retorno_almoco'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($row['saida'] ?? '-') ?></td>
+                </tr>
+            <?php endwhile; ?>
+        </tbody>
+    </table>
 
-<?php endwhile; ?>
-
-</table>
+</div>
 
 </body>
 </html>
