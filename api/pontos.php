@@ -12,8 +12,8 @@ $sql = "
         email,
         data,
         entrada,
-        saida_almoco,
-        retorno_almoco,
+        saida_intervalo,
+        retorno_intervalo,
         saida
     FROM registros_ponto
     ORDER BY data DESC, id DESC
