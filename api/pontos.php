@@ -5,8 +5,9 @@ error_reporting(E_ALL);
 
 header('Content-Type: application/json; charset=utf-8');
 
-require_once '../config/database.php';
+require_once __DIR__ . '/../config/database.php';
 
+<<<<<<< HEAD
 /**
  * Calcula a quantidade de segundos entre dois horários.
  * Também suporta registros que terminem depois da meia-noite.
@@ -138,11 +139,60 @@ $sql = "
 $resultado = mysqli_query($con, $sql);
 
 if (!$resultado) {
+=======
+try {
+
+    $sql = "
+        SELECT
+            id,
+            email,
+            data,
+            entrada,
+            saida_intervalo,
+            retorno_intervalo,
+            saida
+        FROM registros_ponto
+        ORDER BY data DESC, id DESC
+    ";
+
+    $result = mysqli_query($con, $sql);
+
+    if (!$result) {
+        throw new Exception(mysqli_error($con));
+    }
+
+    $dados = [];
+
+    while ($row = mysqli_fetch_assoc($result)) {
+
+        $dados[] = [
+            'id' => (int) $row['id'],
+            'email' => $row['email'],
+            'data' => $row['data'],
+            'entrada' => $row['entrada'],
+            'saida_intervalo' => $row['saida_intervalo'],
+            'retorno_intervalo' => $row['retorno_intervalo'],
+            'saida' => $row['saida']
+        ];
+    }
+
+    http_response_code(200);
+
+    echo json_encode(
+        $dados,
+        JSON_UNESCAPED_UNICODE |
+        JSON_PRETTY_PRINT
+    );
+
+} catch (Throwable $erro) {
+
+>>>>>>> 028a19f (registro automatico e alguns erros resolvidos)
     http_response_code(500);
 
     echo json_encode(
         [
             'erro' => true,
+<<<<<<< HEAD
             'mensagem' => 'Não foi possível consultar os registros.',
             'detalhes' => mysqli_error($con)
         ],
@@ -199,3 +249,11 @@ echo json_encode(
     JSON_UNESCAPED_UNICODE |
     JSON_UNESCAPED_SLASHES
 );
+=======
+            'mensagem' => $erro->getMessage()
+        ],
+        JSON_UNESCAPED_UNICODE |
+        JSON_PRETTY_PRINT
+    );
+}
+>>>>>>> 028a19f (registro automatico e alguns erros resolvidos)
