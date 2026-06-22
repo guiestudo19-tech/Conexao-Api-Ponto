@@ -1,126 +1,191 @@
+
 <?php
 
-ini_set('display_errors', 0);
+/*
+|--------------------------------------------------------------------------
+| API JSON DOS REGISTROS DE PONTO
+|--------------------------------------------------------------------------
+*/
+
 error_reporting(E_ALL);
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
 
 header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
 
-require_once __DIR__ . '/../config/database.php';
-
-<<<<<<< HEAD
-/**
- * Calcula a quantidade de segundos entre dois horários.
- * Também suporta registros que terminem depois da meia-noite.
- */
-function diferencaSegundosHorario(?string $inicio, ?string $fim): int
+function enviarResposta($dados, $codigo)
 {
-    if (
-        empty($inicio) ||
-        empty($fim) ||
-        $inicio === '00:00:00' ||
-        $fim === '00:00:00'
-    ) {
-        return 0;
+    http_response_code($codigo);
+
+    $json = json_encode(
+        $dados,
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES |
+        JSON_PRETTY_PRINT
+    );
+
+    if ($json === false) {
+        echo '{"erro":true,"mensagem":"Erro ao gerar JSON."}';
+    } else {
+        echo $json;
     }
 
-    $inicioTimestamp = strtotime($inicio);
-    $fimTimestamp = strtotime($fim);
-
-    if ($inicioTimestamp === false || $fimTimestamp === false) {
-        return 0;
-    }
-
-    /*
-     * Caso o horário final seja menor que o inicial,
-     * considera que terminou no dia seguinte.
-     */
-    if ($fimTimestamp < $inicioTimestamp) {
-        $fimTimestamp += 86400;
-    }
-
-    return max(0, $fimTimestamp - $inicioTimestamp);
+    exit;
 }
 
-/**
- * Calcula os minutos efetivamente trabalhados.
- *
- * Quando existe intervalo:
- * entrada -> saída do almoço
- * retorno do almoço -> saída
- *
- * Quando não existe intervalo:
- * entrada -> saída
- */
-function calcularMinutosTrabalhados(array $registro): int
-{
-    $entrada = $registro['entrada'] ?? null;
-    $saidaAlmoco = $registro['saida_almoco'] ?? null;
-    $retornoAlmoco = $registro['retorno_almoco'] ?? null;
-    $saida = $registro['saida'] ?? null;
+/*
+|--------------------------------------------------------------------------
+| DESATIVA EXCEÇÕES AUTOMÁTICAS DO MYSQLI
+|--------------------------------------------------------------------------
+*/
 
-    if (empty($entrada) || empty($saida)) {
-        return 0;
+mysqli_report(MYSQLI_REPORT_OFF);
+
+/*
+|--------------------------------------------------------------------------
+| TENTATIVAS DE CONEXÃO
+|--------------------------------------------------------------------------
+*/
+
+$tentativas = array(
+    array('localhost', 'root', 'usbw', 'db_ponto'),
+    array('127.0.0.1', 'root', 'usbw', 'db_ponto'),
+    array('localhost', 'root', '', 'db_ponto'),
+    array('127.0.0.1', 'root', '', 'db_ponto')
+);
+
+$con = null;
+$erroConexao = '';
+
+foreach ($tentativas as $dadosConexao) {
+
+    $host = $dadosConexao[0];
+    $usuario = $dadosConexao[1];
+    $senha = $dadosConexao[2];
+    $banco = $dadosConexao[3];
+
+    $teste = @mysqli_connect(
+        $host,
+        $usuario,
+        $senha,
+        $banco
+    );
+
+    if ($teste) {
+        $con = $teste;
+        break;
     }
 
-    $possuiIntervalo =
-        !empty($saidaAlmoco) &&
-        !empty($retornoAlmoco);
+    $erroConexao = mysqli_connect_error();
+}
 
-    if ($possuiIntervalo) {
-        $periodoManha = diferencaSegundosHorario(
-            $entrada,
-            $saidaAlmoco
-        );
+if (!$con) {
 
-        $periodoTarde = diferencaSegundosHorario(
-            $retornoAlmoco,
-            $saida
-        );
-
-        return (int) round(
-            ($periodoManha + $periodoTarde) / 60
-        );
-    }
-
-    return (int) round(
-        diferencaSegundosHorario($entrada, $saida) / 60
+    enviarResposta(
+        array(
+            'erro' => true,
+            'mensagem' => 'Não foi possível conectar ao banco db_ponto.',
+            'detalhes' => $erroConexao
+        ),
+        500
     );
 }
 
-/**
- * Formata minutos como horas e minutos.
- *
- * Exemplos:
- * 41  => 0h41min
- * 77  => 1h17min
- * 480 => 8h
- */
-function formatarDuracaoMinutos(int $totalMinutos): string
-{
-    $totalMinutos = max(0, $totalMinutos);
+mysqli_set_charset($con, 'utf8mb4');
 
-    $horas = intdiv($totalMinutos, 60);
-    $minutos = $totalMinutos % 60;
+/*
+|--------------------------------------------------------------------------
+| VERIFICA A TABELA
+|--------------------------------------------------------------------------
+*/
 
-    if ($horas === 0 && $minutos === 0) {
-        return '0h';
-    }
+$verificarTabela = mysqli_query(
+    $con,
+    "SHOW TABLES LIKE 'registros_ponto'"
+);
 
-    if ($horas === 0) {
-        return $minutos . 'min';
-    }
+if (!$verificarTabela) {
 
-    if ($minutos === 0) {
-        return $horas . 'h';
-    }
-
-    return $horas . 'h' . str_pad(
-        (string) $minutos,
-        2,
-        '0',
-        STR_PAD_LEFT
-    ) . 'min';
+    enviarResposta(
+        array(
+            'erro' => true,
+            'mensagem' => 'Erro ao verificar a tabela registros_ponto.',
+            'detalhes' => mysqli_error($con)
+        ),
+        500
+    );
 }
+
+if (mysqli_num_rows($verificarTabela) === 0) {
+
+    enviarResposta(
+        array(
+            'erro' => true,
+            'mensagem' => 'A tabela registros_ponto não existe no banco db_ponto.'
+        ),
+        404
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| FILTROS
+|--------------------------------------------------------------------------
+*/
+
+$email = isset($_GET['email'])
+    ? trim($_GET['email'])
+    : '';
+
+$data = isset($_GET['data'])
+    ? trim($_GET['data'])
+    : '';
+
+$where = array();
+
+if ($email !== '') {
+
+    $emailSeguro = mysqli_real_escape_string(
+        $con,
+        $email
+    );
+
+    $where[] =
+        "LOWER(TRIM(email)) = " .
+        "LOWER(TRIM('" . $emailSeguro . "'))";
+}
+
+if ($data !== '') {
+
+    if (
+        !preg_match(
+            '/^\d{4}-\d{2}-\d{2}$/',
+            $data
+        )
+    ) {
+        enviarResposta(
+            array(
+                'erro' => true,
+                'mensagem' => 'A data deve estar no formato YYYY-MM-DD.'
+            ),
+            400
+        );
+    }
+
+    $dataSegura = mysqli_real_escape_string(
+        $con,
+        $data
+    );
+
+    $where[] = "data = '" . $dataSegura . "'";
+}
+
+/*
+|--------------------------------------------------------------------------
+| CONSULTA
+|--------------------------------------------------------------------------
+*/
 
 $sql = "
     SELECT
@@ -128,132 +193,80 @@ $sql = "
         email,
         data,
         entrada,
-        saida_almoco,
-        retorno_almoco,
+        saida_intervalo,
+        retorno_intervalo,
         saida,
         criado_em
     FROM registros_ponto
-    ORDER BY data DESC, id DESC
 ";
 
-$resultado = mysqli_query($con, $sql);
-
-if (!$resultado) {
-=======
-try {
-
-    $sql = "
-        SELECT
-            id,
-            email,
-            data,
-            entrada,
-            saida_intervalo,
-            retorno_intervalo,
-            saida
-        FROM registros_ponto
-        ORDER BY data DESC, id DESC
-    ";
-
-    $result = mysqli_query($con, $sql);
-
-    if (!$result) {
-        throw new Exception(mysqli_error($con));
-    }
-
-    $dados = [];
-
-    while ($row = mysqli_fetch_assoc($result)) {
-
-        $dados[] = [
-            'id' => (int) $row['id'],
-            'email' => $row['email'],
-            'data' => $row['data'],
-            'entrada' => $row['entrada'],
-            'saida_intervalo' => $row['saida_intervalo'],
-            'retorno_intervalo' => $row['retorno_intervalo'],
-            'saida' => $row['saida']
-        ];
-    }
-
-    http_response_code(200);
-
-    echo json_encode(
-        $dados,
-        JSON_UNESCAPED_UNICODE |
-        JSON_PRETTY_PRINT
-    );
-
-} catch (Throwable $erro) {
-
->>>>>>> 028a19f (registro automatico e alguns erros resolvidos)
-    http_response_code(500);
-
-    echo json_encode(
-        [
-            'erro' => true,
-<<<<<<< HEAD
-            'mensagem' => 'Não foi possível consultar os registros.',
-            'detalhes' => mysqli_error($con)
-        ],
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES
-    );
-
-    exit;
+if (!empty($where)) {
+    $sql .= ' WHERE ' . implode(' AND ', $where);
 }
 
-$dados = [];
+$sql .= "
+    ORDER BY
+        data DESC,
+        entrada ASC,
+        id DESC
+";
 
-while ($row = mysqli_fetch_assoc($resultado)) {
-    $minutosTrabalhados = calcularMinutosTrabalhados($row);
+$resultado = mysqli_query(
+    $con,
+    $sql
+);
 
-    $dados[] = [
-        'id' => (int) $row['id'],
-        'email' => $row['email'],
-        'data' => $row['data'],
+if (!$resultado) {
 
-        'entrada' => $row['entrada'],
-
-        /*
-         * Mantém os nomes usados anteriormente pela aplicação,
-         * mesmo que no banco sejam chamados de almoço.
-         */
-        'saida_intervalo' => $row['saida_almoco'],
-        'retorno_intervalo' => $row['retorno_almoco'],
-
-        /*
-         * Também retorna os nomes originais do banco.
-         */
-        'saida_almoco' => $row['saida_almoco'],
-        'retorno_almoco' => $row['retorno_almoco'],
-
-        'saida' => $row['saida'],
-
-        /*
-         * Valores seguros para cálculos.
-         */
-        'total_trabalhado_minutos' => $minutosTrabalhados,
-        'total_trabalhado_formatado' => formatarDuracaoMinutos(
-            $minutosTrabalhados
+    enviarResposta(
+        array(
+            'erro' => true,
+            'mensagem' => 'Erro ao consultar os registros.',
+            'detalhes' => mysqli_error($con),
+            'consulta' => $sql
         ),
+        500
+    );
+}
 
-        'criado_em' => $row['criado_em']
-    ];
+/*
+|--------------------------------------------------------------------------
+| MONTA OS REGISTROS
+|--------------------------------------------------------------------------
+*/
+
+$registros = array();
+
+while (
+    $registro = mysqli_fetch_assoc($resultado)
+) {
+
+    $registros[] = array(
+        'id' => (int) $registro['id'],
+        'email' => $registro['email'],
+        'data' => $registro['data'],
+        'entrada' => $registro['entrada'],
+        'saida_intervalo' => $registro['saida_intervalo'],
+        'retorno_intervalo' => $registro['retorno_intervalo'],
+        'saida' => $registro['saida'],
+        'criado_em' => $registro['criado_em']
+    );
 }
 
 mysqli_free_result($resultado);
+mysqli_close($con);
 
-echo json_encode(
-    $dados,
-    JSON_UNESCAPED_UNICODE |
-    JSON_UNESCAPED_SLASHES
+/*
+|--------------------------------------------------------------------------
+| RESPOSTA FINAL
+|--------------------------------------------------------------------------
+*/
+
+enviarResposta(
+    array(
+        'erro' => false,
+        'total' => count($registros),
+        'registros' => $registros
+    ),
+    200
 );
-=======
-            'mensagem' => $erro->getMessage()
-        ],
-        JSON_UNESCAPED_UNICODE |
-        JSON_PRETTY_PRINT
-    );
-}
->>>>>>> 028a19f (registro automatico e alguns erros resolvidos)
